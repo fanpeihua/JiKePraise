@@ -4,6 +4,10 @@ public class ThumbPoint {
     float x;
     float y;
 
+    ThumbPoint() {
+
+    }
+
     public ThumbPoint(float x, float y) {
         this.x = x;
         this.y = y;
@@ -34,8 +38,7 @@ public class ThumbPoint {
             return false;
         }
         ThumbPoint thumbPoint = (ThumbPoint) obj;
-        if (x != thumbPoint.x) return false;
-        if (y != thumbPoint.y) return false;
+        if (x != thumbPoint.x | y != thumbPoint.y) return false;
         return true;
     }
 

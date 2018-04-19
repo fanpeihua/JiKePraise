@@ -1,15 +1,23 @@
 package fanpeihua.jikepraise;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.os.Bundle;
+import android.os.Parcelable;
 import android.support.annotation.Nullable;
 import android.util.AttributeSet;
 import android.view.View;
+import android.view.animation.OvershootInterpolator;
 
 public class ThumbView extends View {
     //圆圈颜色
@@ -33,9 +41,9 @@ public class ThumbView extends View {
     private float mShiningWidth;
     private float mShiningHeight;
 
-    private ThumbPoint mShingThumbPoint;
-    private ThumbPoint mThumbThumbPoint;
-    private ThumbPoint mCircleThumbPoint;
+    private ThumbPoint mShiningPoint;
+    private ThumbPoint mThumbPoint;
+    private ThumbPoint mCirclePoint;
 
     private float mRadiusMax;
     private float mRadiusMin;
@@ -55,14 +63,14 @@ public class ThumbView extends View {
 
 
     public ThumbView(Context context) {
-        super(context, null);
+        this(context, null);
     }
 
-    public ThumbView(Context context, @Nullable AttributeSet attrs) {
-        super(context, attrs, 0);
+    public ThumbView(Context context, AttributeSet attrs) {
+        this(context, attrs, 0);
     }
 
-    public ThumbView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
+    public ThumbView(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
         init();
     }
@@ -73,6 +81,16 @@ public class ThumbView extends View {
         mCirclePaint = new Paint();
         mCirclePaint.setAntiAlias(true);
         mCirclePaint.setStyle(Paint.Style.STROKE);
+        mCirclePaint.setStrokeWidth(ThumbUtils.dip2px(getContext(), 2));
+
+        mCirclePoint = new ThumbPoint();
+        mCirclePoint.x = mThumbPoint.x + mThumbWidth / 2;
+        mCirclePoint.y = mThumbPoint.y + mThumbHeight / 2;
+
+        mRadiusMax = Math.max(mCirclePoint.x - getPaddingLeft(), mCirclePoint.y - getPaddingTop());
+        mRadiusMin = ThumbUtils.dip2px(getContext(), 8);
+        mClipPath = new Path();
+        mClipPath.addCircle(mCirclePoint.x, mCirclePoint.y, mRadiusMax, Path.Direction.CW);
     }
 
     private void initBitmapInfo() {
@@ -80,8 +98,257 @@ public class ThumbView extends View {
         mBitmapPaint.setAntiAlias(true);
 
         resetBitmap();
+        mThumbWidth = mThumbUp.getWidth();
+        mThumbHeight = mThumbUp.getHeight();
+
+        mShiningWidth = mShining.getWidth();
+        mShiningHeight = mShining.getHeight();
+
+        mShiningPoint = new ThumbPoint();
+        mThumbPoint = new ThumbPoint();
+
+        mShiningPoint.x = getPaddingLeft() + ThumbUtils.dip2px(getContext(), 2);
+        mShiningPoint.y = getPaddingTop();
+        mThumbPoint.x = getPaddingLeft();
+        mThumbPoint.y = getPaddingTop() + ThumbUtils.dip2px(getContext(), 8);
     }
 
     private void resetBitmap() {
+        mThumbUp = BitmapFactory.decodeResource(getResources(), R.drawable.ic_messages_like_selected);
+        mThumbNormal = BitmapFactory.decodeResource(getResources(), R.drawable.ic_messages_like_unselected);
+        mShining = BitmapFactory.decodeResource(getResources(), R.drawable.ic_messages_like_selected_shining);
     }
+
+    public void setIsThumbUp(boolean isThumbUp) {
+        this.mIsThumbUp = isThumbUp;
+        mClickCount = mIsThumbUp ? 1 : 0;
+        mEndCount = mClickCount;
+        postInvalidate();
+    }
+
+    public boolean isThumbUp() {
+        return mIsThumbUp;
+    }
+
+    public void setThumbUpClickListener(ThumbUpClickListener thumbUpClickListener) {
+        this.mThumbUpClickListener = thumbUpClickListener;
+    }
+
+    public ThumbPoint getCirclePoint() {
+        return mCirclePoint;
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        setMeasuredDimension(ThumbUtils.getDefaultSize(widthMeasureSpec,
+                getContentWidth() + getPaddingLeft() + getPaddingRight()),
+                ThumbUtils.getDefaultSize(heightMeasureSpec,
+                        getContentHeight() + getPaddingTop() + getPaddingBottom()));
+    }
+
+    private int getContentWidth() {
+        float minLeft = Math.min(mShiningPoint.x, mThumbPoint.x);
+        float maxRight = Math.max(mShiningPoint.x + mShiningWidth, mThumbPoint.x + mThumbWidth);
+        return (int) (maxRight - minLeft);
+    }
+
+    private int getContentHeight() {
+        float minTop = Math.min(mShiningPoint.y, mThumbPoint.y);
+        float maxBottom = Math.max(mShiningPoint.y + mShiningHeight, mThumbPoint.y + mThumbHeight);
+        return (int) (maxBottom - minTop);
+    }
+
+    @Nullable
+    @Override
+    protected Parcelable onSaveInstanceState() {
+        Bundle data = new Bundle();
+        data.putParcelable("superData", super.onSaveInstanceState());
+        data.putBoolean("isThumbUp", mIsThumbUp);
+        return data;
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Parcelable state) {
+        Bundle data = (Bundle) state;
+        Parcelable superData = data.getParcelable("superData");
+        super.onRestoreInstanceState(superData);
+
+        mIsThumbUp = data.getBoolean("isThumbUp", false);
+        init();
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        if (mIsThumbUp) {
+            if (mClipPath != null) {
+                canvas.save();
+                canvas.clipPath(mClipPath);
+                canvas.drawBitmap(mShining, mShiningPoint.x, mShiningPoint.y, mBitmapPaint);
+                canvas.restore();
+                canvas.drawCircle(mCirclePoint.x, mCirclePoint.y, mRadius, mCirclePaint);
+            }
+            canvas.drawBitmap(mThumbUp, mThumbPoint.x, mThumbPoint.y, mBitmapPaint);
+        } else {
+            canvas.drawBitmap(mThumbNormal, mThumbPoint.x, mThumbPoint.y, mBitmapPaint);
+        }
+    }
+
+
+    public void startAnim() {
+        mClickCount++;
+        boolean isFastAnim = false;
+        long currentTimeMills = System.currentTimeMillis();
+        if (currentTimeMills - mLastStartTime < 300) {
+            isFastAnim = true;
+        }
+        mLastStartTime = currentTimeMills;
+
+        if (mIsThumbUp) {
+            if (isFastAnim) {
+                startFastAnim();
+                return;
+            }
+            startThumbDownAnim();
+            mClickCount = 0;
+        } else {
+            if (mThumbUpAnim != null) {
+                mClickCount = 0;
+            } else {
+                startThumbUpAnim();
+                mClickCount = 1;
+            }
+        }
+        mEndCount = mClickCount;
+    }
+
+
+    private void startFastAnim() {
+        ObjectAnimator thumbUpScale = ObjectAnimator.ofFloat(this,
+                "thumbUpScale", SCALE_MIN, SCALE_MAX);
+        thumbUpScale.setDuration(SCALE_DURING);
+        thumbUpScale.setInterpolator(new OvershootInterpolator());
+
+        ObjectAnimator circleScale = ObjectAnimator.ofFloat(this, "circleScale",
+                mRadiusMin, mRadiusMax);
+        circleScale.setDuration(RADIUS_DURING);
+
+        AnimatorSet set = new AnimatorSet();
+        set.play(thumbUpScale).with(circleScale);
+        set.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                super.onAnimationEnd(animation);
+                mEndCount++;
+                if (mClickCount != mEndCount) {
+                    return;
+                }
+                if (mClickCount % 2 == 0) {
+                    startThumbDownAnim();
+                } else {
+                    if (mThumbUpClickListener != null) {
+                        mThumbUpClickListener.thumbUpFinish();
+                    }
+                }
+            }
+        });
+        set.start();
+    }
+
+    private void startThumbDownAnim() {
+        ObjectAnimator thumbUpScale = ObjectAnimator.ofFloat(this, "thumbUpScale",
+                SCALE_MIN, SCALE_MAX);
+        thumbUpScale.setDuration(SCALE_DURING);
+        thumbUpScale.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                super.onAnimationEnd(animation);
+                mIsThumbUp = false;
+                setNotThumbUpScale(SCALE_MAX);
+                if (mThumbUpClickListener != null) {
+                    mThumbUpClickListener.thumbDownFinish();
+                }
+            }
+        });
+        thumbUpScale.start();
+    }
+
+    private void startThumbUpAnim() {
+        ObjectAnimator notThumbUpScale = ObjectAnimator.ofFloat(this, "notThumbUpScale",
+                SCALE_MAX, SCALE_MIN);
+        notThumbUpScale.setDuration(SCALE_DURING);
+        notThumbUpScale.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                super.onAnimationEnd(animation);
+                mIsThumbUp = true;
+            }
+        });
+
+        ObjectAnimator thumbUpScale = ObjectAnimator.ofFloat(this, "thumbUpScale", SCALE_MIN, SCALE_MAX);
+        thumbUpScale.setDuration(SCALE_DURING);
+        thumbUpScale.setInterpolator(new OvershootInterpolator());
+
+        ObjectAnimator circleScale = ObjectAnimator.ofFloat(this, "circleScale", mRadiusMin, mRadiusMax);
+        circleScale.setDuration(RADIUS_DURING);
+
+        mThumbUpAnim = new AnimatorSet();
+        mThumbUpAnim.play(thumbUpScale).with(circleScale);
+        mThumbUpAnim.play(thumbUpScale).after(notThumbUpScale);
+        mThumbUpAnim.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                super.onAnimationEnd(animation);
+                mThumbUpAnim = null;
+                if (mThumbUpClickListener != null) {
+                    mThumbUpClickListener.thumbUpFinish();
+                }
+            }
+        });
+        mThumbUpAnim.start();
+    }
+
+
+    private void setNotThumbUpScale(float scale) {
+        Matrix matrix = new Matrix();
+        matrix.postScale(scale, scale);
+        mThumbNormal = BitmapFactory.decodeResource(getResources(), R.drawable.ic_messages_like_unselected);
+        mThumbNormal = Bitmap.createBitmap(mThumbNormal, 0, 0, mThumbNormal.getWidth(), mThumbNormal.getHeight(),
+                matrix, true);
+        postInvalidate();
+    }
+
+    private void setThumbUpScale(float scale) {
+        Matrix matrix = new Matrix();
+        matrix.postScale(scale, scale);
+        mThumbUp = BitmapFactory.decodeResource(getResources(), R.drawable.ic_messages_like_selected);
+        mThumbUp = Bitmap.createBitmap(mThumbUp, 0, 0, mThumbUp.getWidth(), mThumbUp.getHeight(),
+                matrix, true);
+        postInvalidate();
+    }
+
+    private void setShiningScale(float scale) {
+        Matrix matrix = new Matrix();
+        matrix.postScale(scale, scale);
+        mShining = BitmapFactory.decodeResource(getResources(), R.drawable.ic_messages_like_selected_shining);
+        mShining = Bitmap.createBitmap(mShining, 0, 0, mShining.getWidth(), mShining.getHeight(),
+                matrix, true);
+        postInvalidate();
+    }
+
+    public void setCircleScale(float radius) {
+        mRadius = radius;
+        mClipPath = new Path();
+        mClipPath.addCircle(mCirclePoint.x, mCirclePoint.y, mRadius, Path.Direction.CW);
+        float fraction = (mRadiusMax - radius) / (mRadiusMax - mRadiusMin);
+        mCirclePaint.setColor((int) ThumbUtils.evaluate(fraction, START_COLOR, END_COLOR));
+        postInvalidate();
+    }
+
+    public interface ThumbUpClickListener {
+        void thumbUpFinish();
+
+        void thumbDownFinish();
+    }
+
 }

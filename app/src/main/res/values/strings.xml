@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">JiKePraise</string>
+    <string name="input_num">请输入数字</string>
+    <string name="setting">设置</string>
 </resources>
